@@ -6,17 +6,24 @@ import threading
 import yt_dlp as youtube_dl
 from pydub import AudioSegment
 import webbrowser
+import subprocess
+import signal
 
 class MediaDownloaderGUI:
     def __init__(self, root):
         self.root = root
         self.setup_gui()
         self.is_downloading = False
+        self.download_thread = None  # Track the download thread
+        self.processes = []  # Track subprocesses (if any)
         
+        # Bind the close event to cleanup
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
     def setup_gui(self):
         # Configure main window
         self.root.title("Media Playlist Downloader")
-        self.root.geometry("800x550")
+        self.root.geometry("800x600")
         self.root.resizable(True, True)
         
         # Colors and styling
@@ -33,13 +40,44 @@ class MediaDownloaderGUI:
         title_font = font.Font(family="Arial", size=18, weight="bold")
         label_font = font.Font(family="Arial", size=11)
         
-        # Configure grid weights
+        # Configure grid weights for main window
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
         
-        # Main container
-        main_frame = tk.Frame(self.root, bg=bg_color, padx=25, pady=20)
-        main_frame.grid(row=0, column=0, sticky="nsew")
+        # Create main canvas and scrollbar for scrolling
+        main_canvas = tk.Canvas(self.root, bg=bg_color, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=main_canvas.yview)
+        scrollable_frame = tk.Frame(main_canvas, bg=bg_color)
+        
+        # Configure scrolling
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+        )
+        
+        main_canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        main_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Grid the canvas and scrollbar
+        main_canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Bind mousewheel to canvas
+        def _on_mousewheel(event):
+            main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _bind_to_mousewheel(event):
+            main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_from_mousewheel(event):
+            main_canvas.unbind_all("<MouseWheel>")
+        
+        main_canvas.bind('<Enter>', _bind_to_mousewheel)
+        main_canvas.bind('<Leave>', _unbind_from_mousewheel)
+        
+        # Main container (now inside scrollable frame)
+        main_frame = tk.Frame(scrollable_frame, bg=bg_color, padx=25, pady=20)
+        main_frame.pack(fill="both", expand=True)
         main_frame.grid_columnconfigure(1, weight=1)
         
         # Title
@@ -173,9 +211,9 @@ class MediaDownloaderGUI:
                              width=15, cursor="hand2", relief="flat")
         clear_btn.grid(row=0, column=1, padx=10)
         
-        # Footer with credits
-        footer_frame = tk.Frame(self.root, bg=primary_color, height=60)
-        footer_frame.grid(row=1, column=0, sticky="ew")
+        # Footer with credits (now inside scrollable area)
+        footer_frame = tk.Frame(main_frame, bg=primary_color, height=60)
+        footer_frame.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(20, 0))
         footer_frame.grid_propagate(False)
         footer_frame.grid_columnconfigure(0, weight=1)
         
@@ -394,7 +432,7 @@ Remember: Respect content creators' rights and platform terms of service!"""
             return False
             
         return True
-        
+     
     def start_download(self):
         if not self.validate_inputs():
             return
@@ -404,10 +442,10 @@ Remember: Respect content creators' rights and platform terms of service!"""
             return
             
         # Start download in separate thread
-        download_thread = threading.Thread(target=self.download_playlist)
-        download_thread.daemon = True
-        download_thread.start()
-        
+        self.download_thread = threading.Thread(target=self.download_playlist)
+        self.download_thread.daemon = True
+        self.download_thread.start()
+
     def download_playlist(self):
         self.is_downloading = True
         self.download_btn.config(state="disabled", text="⏳ Downloading...")
@@ -427,15 +465,16 @@ Remember: Respect content creators' rights and platform terms of service!"""
             selected_format = self.format_var.get()
             
             if selected_format == "MP4":
-                # For MP4, download best video+audio
-                ydl_opts = {
-                    'format': 'best[ext=mp4]/best',
-                    'outtmpl': os.path.join(save_directory, '%(playlist_index)s - %(title)s.%(ext)s'),
-                    'noplaylist': False,
-                    'http_headers': {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    }
-                }
+                cmd = [
+                    "python", "-m", "yt_dlp",
+                    "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
+                    "--merge-output-format", "mp4",
+                    "--output", os.path.join(save_directory, "%(playlist_index)s - %(title)s.%(ext)s")
+                ]
+                cmd.append(playlist_url)
+                process = subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
+                self.processes.append(process)  # Track the subprocess
+                process.wait()  # Wait for completion
             else:
                 # For MP3 or Original Format, download best audio
                 ydl_opts = {
@@ -448,56 +487,109 @@ Remember: Respect content creators' rights and platform terms of service!"""
                     }
                 }
             
-            # Add cookies file if provided
-            if cookies_file and os.path.exists(cookies_file):
-                ydl_opts['cookiefile'] = cookies_file
+                # Add cookies file if provided
+                if cookies_file and os.path.exists(cookies_file):
+                    ydl_opts['cookiefile'] = cookies_file
                 
-            self.progress_var.set("Extracting playlist information...")
-            
-            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(playlist_url, download=True)
-                playlist_title = info_dict.get('title', 'playlist')
-                entries = info_dict.get('entries', [])
+                # Add additional options for better compatibility
+                ydl_opts.update({
+                    'ignoreerrors': True,  # Continue on download errors
+                    'no_warnings': False,
+                    'extractaudio': False,
+                    'embed_subs': False,
+                    'writeautomaticsub': False,
+                })
                 
-                # Handle format conversion
-                if selected_format == "MP3":
-                    self.progress_var.set("Converting to MP3...")
-                    total_files = len(entries)
+                self.progress_var.set("Extracting playlist information...")
+                
+                with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                    info_dict = ydl.extract_info(playlist_url, download=True)
+                    playlist_title = info_dict.get('title', 'playlist')
+                    entries = info_dict.get('entries', [])
                     
-                    for i, entry in enumerate(entries):
-                        try:
-                            file_path = ydl.prepare_filename(entry)
-                            if file_path and os.path.exists(file_path) and not file_path.endswith('.mp3'):
-                                self.progress_var.set(f"Converting to MP3... ({i+1}/{total_files})")
-                                audio = AudioSegment.from_file(file_path)
-                                mp3_path = os.path.splitext(file_path)[0] + '.mp3'
-                                audio.export(mp3_path, format='mp3')
-                                os.remove(file_path)
-                        except Exception as e:
-                            print(f"Error converting file {i+1}: {e}")
-                            continue
-                elif selected_format == "MP4":
-                    # MP4 files are already in the correct format, no conversion needed
-                    self.progress_var.set("MP4 files downloaded successfully!")
-                else:
-                    # Original format - no conversion needed
-                    self.progress_var.set("Files downloaded in original format!")
+                    # Handle format conversion for non-MP4 formats
+                    if selected_format == "MP3":
+                        self.progress_var.set("Converting to MP3...")
+                        total_files = len(entries)
+                        
+                        for i, entry in enumerate(entries):
+                            try:
+                                if entry is None:  # Skip failed entries
+                                    continue
+                                    
+                                file_path = ydl.prepare_filename(entry)
+                                if file_path and os.path.exists(file_path) and not file_path.endswith('.mp3'):
+                                    self.progress_var.set(f"Converting to MP3... ({i+1}/{total_files})")
+                                    audio = AudioSegment.from_file(file_path)
+                                    mp3_path = os.path.splitext(file_path)[0] + '.mp3'
+                                    audio.export(mp3_path, format='mp3')
+                                    os.remove(file_path)
+                            except Exception as e:
+                                print(f"Error converting file {i+1}: {e}")
+                                continue
+                    elif selected_format == "MP4":
+                        self.progress_var.set("MP4 files downloaded successfully!")
+                    else:
+                        self.progress_var.set("Files downloaded in original format!")
                             
-            self.progress_var.set("Download completed successfully!")
-            messagebox.showinfo("Success", 
-                              f"Playlist '{playlist_title}' downloaded successfully!\n"
-                              f"Format: {selected_format}\n"
-                              f"Location: {save_directory}\n"
-                              f"Files downloaded: {len(entries)}")
+                self.progress_var.set("Download completed successfully!")
+                successful_downloads = len([e for e in entries if e is not None])
+                messagebox.showinfo("Success", 
+                                  f"Playlist '{playlist_title}' downloaded successfully!\n"
+                                  f"Format: {selected_format}\n"
+                                  f"Location: {save_directory}\n"
+                                  f"Files downloaded: {successful_downloads}")
                               
         except Exception as e:
             self.progress_var.set("Download failed!")
-            messagebox.showerror("Error", f"Download failed:\n{str(e)}")
+            error_msg = str(e)
+            
+            if "Requested format is not available" in error_msg:
+                error_msg += "\n\nTip: Try selecting 'Original Format' instead of MP4, or check if the videos support the requested quality."
+            elif "Private video" in error_msg:
+                error_msg += "\n\nTip: Some videos in the playlist might be private. Try using a cookies file if you have access."
+            elif "Video unavailable" in error_msg:
+                error_msg += "\n\nTip: Some videos might be region-locked or removed. The downloader will skip these."
+                
+            messagebox.showerror("Error", f"Download failed:\n{error_msg}")
             
         finally:
             self.is_downloading = False
             self.download_btn.config(state="normal", text="🚀 Start Download")
             self.progress_bar.stop()
+            self.processes = []  # Clear tracked processes
+
+    def on_closing(self):
+        """Handle window closing to clean up processes and threads."""
+        if self.is_downloading:
+            if messagebox.askokcancel("Quit", "Download is in progress. Are you sure you want to quit?"):
+                # Stop the progress bar
+                self.progress_bar.stop()
+                
+                # Terminate any running subprocesses
+                for process in self.processes:
+                    try:
+                        if os.name == 'nt':  # Windows
+                            process.send_signal(signal.CTRL_BREAK_EVENT)
+                        else:  # Unix-based systems
+                            process.terminate()
+                        process.wait(timeout=2)  # Wait briefly for clean exit
+                    except subprocess.TimeoutExpired:
+                        process.kill()  # Force kill if it doesn't terminate
+                    except Exception:
+                        pass
+                self.processes = []
+                
+                # Reset UI and state
+                self.is_downloading = False
+                self.download_btn.config(state="normal", text="🚀 Start Download")
+                self.progress_var.set("Download cancelled.")
+                
+                # Close the application
+                self.root.destroy()
+        else:
+            # If no download is in progress, close immediately
+            self.root.destroy()
 
 def main():
     root = tk.Tk()
