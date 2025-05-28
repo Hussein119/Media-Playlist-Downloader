@@ -476,6 +476,16 @@ Remember: Respect content creators' rights and platform terms of service!"""
                 self.processes.append(process)  # Track the subprocess
                 process.wait()  # Wait for completion
             else:
+                if (self.is_youtube_url(self.url_var.get().strip())) : 
+                        process = subprocess.Popen([
+                                "python", "-m", "yt_dlp",
+                                "-x", "--audio-format", "mp3",
+                                "--output", os.path.join(save_directory, '%(playlist_index)s - %(title)s.%(ext)s'),
+                                self.url_var.get().strip()
+                            ])
+                    
+                self.processes.append(process)
+
                 # For MP3 or Original Format, download best audio
                 ydl_opts = {
                     'format': 'bestaudio/best',
@@ -560,35 +570,29 @@ Remember: Respect content creators' rights and platform terms of service!"""
             self.processes = []  # Clear tracked processes
 
     def on_closing(self):
-        """Handle window closing to clean up processes and threads."""
         if self.is_downloading:
             if messagebox.askokcancel("Quit", "Download is in progress. Are you sure you want to quit?"):
-                # Stop the progress bar
                 self.progress_bar.stop()
                 
-                # Terminate any running subprocesses
                 for process in self.processes:
                     try:
-                        if os.name == 'nt':  # Windows
-                            process.send_signal(signal.CTRL_BREAK_EVENT)
-                        else:  # Unix-based systems
-                            process.terminate()
-                        process.wait(timeout=2)  # Wait briefly for clean exit
+                        if process.poll() is None:  # Still running
+                            if os.name == 'nt':
+                                process.send_signal(signal.CTRL_BREAK_EVENT)
+                            else:
+                                process.terminate()
+                            process.wait(timeout=2)
                     except subprocess.TimeoutExpired:
-                        process.kill()  # Force kill if it doesn't terminate
-                    except Exception:
-                        pass
+                        process.kill()
+                    except Exception as e:
+                        print(f"Error terminating process: {e}")
+
                 self.processes = []
-                
-                # Reset UI and state
                 self.is_downloading = False
                 self.download_btn.config(state="normal", text="🚀 Start Download")
                 self.progress_var.set("Download cancelled.")
-                
-                # Close the application
                 self.root.destroy()
         else:
-            # If no download is in progress, close immediately
             self.root.destroy()
 
 def main():
