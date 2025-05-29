@@ -16,14 +16,16 @@ class MediaDownloaderGUI:
         self.is_downloading = False
         self.download_thread = None  # Track the download thread
         self.processes = []  # Track subprocesses (if any)
-        
         # Bind the close event to cleanup
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Get default Downloads folder path
+        downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+        self.directory_var = tk.StringVar(value=downloads_path)
 
     def setup_gui(self):
         # Configure main window
         self.root.title("Media Playlist Downloader")
-        self.root.geometry("800x600")
+        self.root.geometry("820x600")
         self.root.resizable(True, True)
         
         # Colors and styling
@@ -97,17 +99,17 @@ class MediaDownloaderGUI:
         url_entry.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         
         # Add placeholder text functionality
-        url_entry.insert(0, "Enter playlist URL (SoundCloud, YouTube, etc.)")
+        url_entry.insert(0, "Enter playlist/track URL (SoundCloud, YouTube, etc.)")
         url_entry.config(fg='gray')
         
         def on_url_focus_in(event):
-            if url_entry.get() == "Enter playlist URL (SoundCloud, YouTube, etc.)":
+            if url_entry.get() == "Enter playlist/track URL (SoundCloud, YouTube, etc.)":
                 url_entry.delete(0, tk.END)
                 url_entry.config(fg='black')
                 
         def on_url_focus_out(event):
             if url_entry.get() == "":
-                url_entry.insert(0, "Enter playlist URL (SoundCloud, YouTube, etc.)")
+                url_entry.insert(0, "Enter playlist/track URL (SoundCloud, YouTube, etc.)")
                 url_entry.config(fg='gray')
             self.update_format_options()
                 
@@ -120,18 +122,21 @@ class MediaDownloaderGUI:
         
         # Directory Section
         dir_frame = tk.LabelFrame(main_frame, text="📁 Output Directory", 
-                                 font=label_font, bg=bg_color, fg=primary_color, padx=15, pady=15)
+                                font=label_font, bg=bg_color, fg=primary_color, padx=15, pady=15)
         dir_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 15))
         dir_frame.grid_columnconfigure(0, weight=1)
-        
-        self.directory_var = tk.StringVar()
+
+        # Set default to Downloads folder
+        downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+        self.directory_var = tk.StringVar(value=downloads_path)
+
         directory_entry = tk.Entry(dir_frame, textvariable=self.directory_var, font=label_font, 
-                                  width=50, relief="solid", bd=1)
+                                width=50, relief="solid", bd=1)
         directory_entry.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        
+
         browse_btn = tk.Button(dir_frame, text="📂 Browse", command=self.select_directory, 
-                              bg=secondary_color, fg="white", font=label_font, width=12,
-                              cursor="hand2", relief="flat")
+                            bg=secondary_color, fg="white", font=label_font, width=12,
+                            cursor="hand2", relief="flat")
         browse_btn.grid(row=0, column=1, padx=(10, 5), pady=5)
         
         # Cookies Section with Help Button
@@ -163,7 +168,7 @@ class MediaDownloaderGUI:
         
         # Options Section
         options_frame = tk.LabelFrame(main_frame, text="⚙️ Download Options", 
-                                     font=label_font, bg=bg_color, fg=primary_color, padx=15, pady=15)
+                                    font=label_font, bg=bg_color, fg=primary_color, padx=15, pady=15)
         options_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(0, 15))
         
         # Format selection
@@ -172,12 +177,41 @@ class MediaDownloaderGUI:
         
         self.format_var = tk.StringVar(value="MP3")
         self.format_combo = ttk.Combobox(options_frame, textvariable=self.format_var, 
-                                   values=["MP3", "Original Format"], state="readonly", font=label_font)
+                                values=["MP3", "Original Format"], state="readonly", font=label_font)
         self.format_combo.grid(row=0, column=1, padx=5, pady=8, sticky="w")
         
         # Quality selection
         tk.Label(options_frame, text="Audio Quality:", font=label_font, bg=bg_color, fg=primary_color).grid(
             row=0, column=2, padx=(20, 5), pady=8, sticky="w")
+        
+        self.quality_var = tk.StringVar(value="Best Available")
+        quality_combo = ttk.Combobox(options_frame, textvariable=self.quality_var, 
+                                    values=["Best Available", "Good", "Normal"], state="readonly", font=label_font)
+        quality_combo.grid(row=0, column=3, padx=5, pady=8, sticky="w")
+        
+        # NEW: Playlist Range Section
+        range_frame = tk.Frame(options_frame, bg=bg_color)
+        range_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        
+        tk.Label(range_frame, text="Playlist Range:", font=label_font, bg=bg_color, fg=primary_color).grid(
+            row=0, column=0, padx=5, pady=5, sticky="w")
+        
+        tk.Label(range_frame, text="Start:", font=label_font, bg=bg_color, fg=primary_color).grid(
+            row=0, column=1, padx=(20, 5), pady=5, sticky="w")
+        
+        self.start_var = tk.StringVar(value="1")
+        start_entry = tk.Entry(range_frame, textvariable=self.start_var, font=label_font, width=8, relief="solid", bd=1)
+        start_entry.grid(row=0, column=2, padx=5, pady=5)
+        
+        tk.Label(range_frame, text="End:", font=label_font, bg=bg_color, fg=primary_color).grid(
+            row=0, column=3, padx=(20, 5), pady=5, sticky="w")
+        
+        self.end_var = tk.StringVar()
+        end_entry = tk.Entry(range_frame, textvariable=self.end_var, font=label_font, width=8, relief="solid", bd=1)
+        end_entry.grid(row=0, column=4, padx=5, pady=5)
+        
+        tk.Label(range_frame, text="(leave end empty for all)", font=("Arial", 9), bg=bg_color, fg="gray").grid(
+            row=0, column=5, padx=(10, 0), pady=5, sticky="w")
         
         self.quality_var = tk.StringVar(value="Best Available")
         quality_combo = ttk.Combobox(options_frame, textvariable=self.quality_var, 
@@ -205,9 +239,9 @@ class MediaDownloaderGUI:
                                      bg=accent_color, fg="white", font=("Arial", 12, "bold"), 
                                      width=18, height=2, cursor="hand2", relief="flat")
         self.download_btn.grid(row=0, column=0, padx=10)
-        
+    
         clear_btn = tk.Button(button_frame, text="🗑️ Clear All", command=self.clear_all, 
-                             bg=warning_color, fg="white", font=label_font, 
+                             bg=warning_color, fg="white", font=("Arial", 12, "bold"), 
                              width=15, cursor="hand2", relief="flat")
         clear_btn.grid(row=0, column=1, padx=10)
         
@@ -362,7 +396,7 @@ Remember: Respect content creators' rights and platform terms of service!"""
         x = (help_window.winfo_screenwidth() // 2) - (help_window.winfo_width() // 2)
         y = (help_window.winfo_screenheight() // 2) - (help_window.winfo_height() // 2)
         help_window.geometry(f"+{x}+{y}")
-        
+ 
     def add_hover_effects(self, buttons):
         def on_enter(e):
             e.widget.config(relief="raised")
@@ -394,6 +428,8 @@ Remember: Respect content creators' rights and platform terms of service!"""
         self.url_var.set("")
         self.directory_var.set("")
         self.cookies_var.set("")
+        self.start_var.set("1")
+        self.end_var.set("")
         self.progress_var.set("Ready to download...")
         self.progress_bar.stop()
         self.update_format_options()
@@ -430,9 +466,36 @@ Remember: Respect content creators' rights and platform terms of service!"""
         if not directory:
             messagebox.showerror("Error", "Please select a download directory.")
             return False
+        
+        # NEW: Validate playlist range
+        start_str = self.start_var.get().strip()
+        end_str = self.end_var.get().strip()
+        
+        if start_str:
+            try:
+                start_num = int(start_str)
+                if start_num < 1:
+                    messagebox.showerror("Error", "Start index must be 1 or greater.")
+                    return False
+            except ValueError:
+                messagebox.showerror("Error", "Start index must be a valid number.")
+                return False
+        
+        if end_str:
+            try:
+                end_num = int(end_str)
+                if end_num < 1:
+                    messagebox.showerror("Error", "End index must be 1 or greater.")
+                    return False
+                if start_str and int(start_str) > end_num:
+                    messagebox.showerror("Error", "Start index cannot be greater than end index.")
+                    return False
+            except ValueError:
+                messagebox.showerror("Error", "End index must be a valid number.")
+                return False
             
         return True
-     
+
     def start_download(self):
         if not self.validate_inputs():
             return
@@ -457,6 +520,12 @@ Remember: Respect content creators' rights and platform terms of service!"""
             save_directory = self.directory_var.get().strip()
             cookies_file = self.cookies_var.get().strip()
             
+            # NEW: Get playlist range values
+            start_str = self.start_var.get().strip()
+            end_str = self.end_var.get().strip()
+            start_index = int(start_str) if start_str else 1
+            end_index = int(end_str) if end_str else None
+            
             # Create directory if it doesn't exist
             if not os.path.exists(save_directory):
                 os.makedirs(save_directory)
@@ -469,17 +538,26 @@ Remember: Respect content creators' rights and platform terms of service!"""
                     "python", "-m", "yt_dlp",
                     "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
                     "--merge-output-format", "mp4",
-                    "--output", os.path.join(save_directory, "%(playlist_index)s - %(title)s.%(ext)s")
+                    "--output", os.path.join(save_directory, "%(playlist_index)s - %(title)s.%(ext)s"),
+                    "--playlist-start", str(start_index)
                 ]
+                
+                # NEW: Add end index if specified
+                if end_index:
+                    cmd += ["--playlist-end", str(end_index)]
+                    
                 cmd.append(playlist_url)
                 process = subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
-                self.processes.append(process)  # Track the subprocess
-                process.wait()  # Wait for completion
+                self.processes.append(process)
+                process.wait()
+                
+                range_text = f"from {start_index}" + (f" to {end_index}" if end_index else " to end")
                 self.progress_var.set("MP4 files downloaded successfully!")
                 messagebox.showinfo("Success", 
-                                  f"Playlist downloaded successfully!\n"
-                                  f"Format: {selected_format}\n"
-                                  f"Location: {save_directory}")
+                                f"Playlist downloaded successfully!\n"
+                                f"Format: {selected_format}\n"
+                                f"Range: {range_text}\n"
+                                f"Location: {save_directory}")
             else:
                 # For SoundCloud and other platforms, or MP3 format
                 ydl_opts = {
@@ -489,23 +567,29 @@ Remember: Respect content creators' rights and platform terms of service!"""
                     'postprocessors': [],
                     'http_headers': {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    }
+                    },
+                    # NEW: Add playlist range options
+                    'playliststart': start_index,
                 }
+                
+                # NEW: Add end index if specified
+                if end_index:
+                    ydl_opts['playlistend'] = end_index
             
                 # Add cookies file if provided
                 if cookies_file and os.path.exists(cookies_file):
                     ydl_opts['cookiefile'] = cookies_file
                 
-                # Add additional options for better compatibility
                 ydl_opts.update({
-                    'ignoreerrors': True,  # Continue on download errors
+                    'ignoreerrors': True,
                     'no_warnings': False,
                     'extractaudio': False,
                     'embed_subs': False,
                     'writeautomaticsub': False,
                 })
                 
-                self.progress_var.set("Extracting playlist information...")
+                range_text = f"from {start_index}" + (f" to {end_index}" if end_index else " to end")
+                self.progress_var.set(f"Extracting playlist information... (Range: {range_text})")
                 
                 with youtube_dl.YoutubeDL(ydl_opts) as ydl:
                     info_dict = ydl.extract_info(playlist_url, download=True)
@@ -519,7 +603,7 @@ Remember: Respect content creators' rights and platform terms of service!"""
                         
                         for i, entry in enumerate(entries):
                             try:
-                                if entry is None:  # Skip failed entries
+                                if entry is None:
                                     continue
                                     
                                 file_path = ydl.prepare_filename(entry)
@@ -539,11 +623,12 @@ Remember: Respect content creators' rights and platform terms of service!"""
                     
                     successful_downloads = len([e for e in entries if e is not None])
                     messagebox.showinfo("Success", 
-                                      f"Playlist '{playlist_title}' downloaded successfully!\n"
-                                      f"Format: {selected_format}\n"
-                                      f"Location: {save_directory}\n"
-                                      f"Files downloaded: {successful_downloads}")
-                              
+                                    f"Playlist '{playlist_title}' downloaded successfully!\n"
+                                    f"Format: {selected_format}\n"
+                                    f"Range: {range_text}\n"
+                                    f"Location: {save_directory}\n"
+                                    f"Files downloaded: {successful_downloads}")
+                            
         except Exception as e:
             self.progress_var.set("Download failed!")
             error_msg = str(e)
@@ -561,8 +646,8 @@ Remember: Respect content creators' rights and platform terms of service!"""
             self.is_downloading = False
             self.download_btn.config(state="normal", text="🚀 Start Download")
             self.progress_bar.stop()
-            self.processes = []  # Clear tracked processes
-
+            self.processes = []
+        
     def on_closing(self):
         if self.is_downloading:
             if messagebox.askokcancel("Quit", "Download is in progress. Are you sure you want to quit?"):
