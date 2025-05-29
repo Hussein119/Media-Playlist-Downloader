@@ -464,7 +464,7 @@ Remember: Respect content creators' rights and platform terms of service!"""
             # Configure yt-dlp options
             selected_format = self.format_var.get()
             
-            if selected_format == "MP4":
+            if selected_format == "MP4" and self.is_youtube_url(playlist_url):
                 cmd = [
                     "python", "-m", "yt_dlp",
                     "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
@@ -475,18 +475,13 @@ Remember: Respect content creators' rights and platform terms of service!"""
                 process = subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
                 self.processes.append(process)  # Track the subprocess
                 process.wait()  # Wait for completion
+                self.progress_var.set("MP4 files downloaded successfully!")
+                messagebox.showinfo("Success", 
+                                  f"Playlist downloaded successfully!\n"
+                                  f"Format: {selected_format}\n"
+                                  f"Location: {save_directory}")
             else:
-                if (self.is_youtube_url(self.url_var.get().strip())) : 
-                        process = subprocess.Popen([
-                                "python", "-m", "yt_dlp",
-                                "-x", "--audio-format", "mp3",
-                                "--output", os.path.join(save_directory, '%(playlist_index)s - %(title)s.%(ext)s'),
-                                self.url_var.get().strip()
-                            ])
-                    
-                self.processes.append(process)
-
-                # For MP3 or Original Format, download best audio
+                # For SoundCloud and other platforms, or MP3 format
                 ydl_opts = {
                     'format': 'bestaudio/best',
                     'outtmpl': os.path.join(save_directory, '%(playlist_index)s - %(title)s.%(ext)s'),
@@ -517,7 +512,7 @@ Remember: Respect content creators' rights and platform terms of service!"""
                     playlist_title = info_dict.get('title', 'playlist')
                     entries = info_dict.get('entries', [])
                     
-                    # Handle format conversion for non-MP4 formats
+                    # Handle format conversion for MP3
                     if selected_format == "MP3":
                         self.progress_var.set("Converting to MP3...")
                         total_files = len(entries)
@@ -537,18 +532,17 @@ Remember: Respect content creators' rights and platform terms of service!"""
                             except Exception as e:
                                 print(f"Error converting file {i+1}: {e}")
                                 continue
-                    elif selected_format == "MP4":
-                        self.progress_var.set("MP4 files downloaded successfully!")
+                        
+                        self.progress_var.set("Download and conversion completed successfully!")
                     else:
                         self.progress_var.set("Files downloaded in original format!")
-                            
-                self.progress_var.set("Download completed successfully!")
-                successful_downloads = len([e for e in entries if e is not None])
-                messagebox.showinfo("Success", 
-                                  f"Playlist '{playlist_title}' downloaded successfully!\n"
-                                  f"Format: {selected_format}\n"
-                                  f"Location: {save_directory}\n"
-                                  f"Files downloaded: {successful_downloads}")
+                    
+                    successful_downloads = len([e for e in entries if e is not None])
+                    messagebox.showinfo("Success", 
+                                      f"Playlist '{playlist_title}' downloaded successfully!\n"
+                                      f"Format: {selected_format}\n"
+                                      f"Location: {save_directory}\n"
+                                      f"Files downloaded: {successful_downloads}")
                               
         except Exception as e:
             self.progress_var.set("Download failed!")
